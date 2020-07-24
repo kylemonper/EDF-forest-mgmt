@@ -1,0 +1,170 @@
+---
+title: "edf"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(tidyverse)
+library(sf)
+
+
+counties <- read_csv("../input/plot_county.csv") %>% 
+    select(ID, lat, lon, NAME)
+
+all_data <- read_csv("../output_data/all_data.csv") %>% 
+  select(ID, ftype, fvs_variant, owngrpcd)
+
+res <- read_csv("../output_data/relative_carb_fire.csv")
+
+
+```
+
+
+```{r}
+price <- 200 ### this is the max we are willing to pay  per ton
+
+optimal <- res %>% 
+    filter(total_carbon_max > 0 ) %>%     
+    mutate(value = (price * total_carbon_max) - total_cost) %>% 
+    group_by(ID) %>% 
+    filter(value > 0 &
+             value == max(value))
+
+opt_tie_break <- optimal %>% 
+  group_by(ID) %>% 
+  sample_n(1) %>% 
+  ungroup()
+```
+
+
+```{r}
+type <- left_join(opt_tie_break, all_data, by = "ID")
+
+test <- type %>% 
+  group_by(rxpackage, fvs_variant) %>% 
+  dplyr::summarise(
+    mean_c = mean(total_carbon_max),
+    upper = quantile(total_carbon_max, .95),
+    lower = quantile(total_carbon_max, .05)
+  )
+
+ggplot(test, aes(x = rxpackage, y = mean_c)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~fvs_variant)
+```
+
+```{r, MCC}
+cumsum <- opt_tie_break %>% 
+  arrange(cpu_max) %>% 
+  filter(cpu_max > -100 & cpu_max < 200) %>% 
+  mutate(cumsum_carb = cumsum(total_carbon_max))
+
+
+
+library(scales) # for comma in x axis
+
+ggplot(cumsum, aes(cumsum_carb, cpu_max)) +
+  geom_point(aes(color = cpu_max)) +
+  scale_colour_gradient2(low = "forestgreen", mid = "yellow", high = "red", midpoint = 50) +
+  scale_x_continuous(limits = c(0, 60000000),label=comma) +
+  scale_y_continuous(limits = c(-150,220), expand = c(0,0)) +
+  theme_minimal(base_size = 24) +
+  theme(legend.position = "none") +
+  labs(
+    x = "Tons of Carbon",
+    y = "$/Ton of Carbon",
+    title = "MCC (w/ CC)"
+  )
+
+
+
+```
+
+```{r, Pacakge counts}
+##### Package counts 
+package_count <- optimal %>% 
+  group_by(rxpackage) %>% 
+  tally()
+
+package_count$rxpackage <- factor(package_count$rxpackage, levels = package_count$rxpackage[order(-package_count$n)])
+
+ggplot(package_count, aes(as.factor(rxpackage), n)) +
+  geom_col() +
+  labs(
+    title = "counts of optimal packages",
+    x = "treatment package", 
+    y = "count"
+  ) +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+```
+
+```{r, total cost}
+
+
+#### calculate average cpu for each (not including optimal) treatments
+
+tmp <- res %>% 
+  filter(cpu_max > -400 & cpu_max < 400)
+
+ggplot(tmp, aes(x = reorder(rxpackage,-cpu_max, mean), y = cpu_max)) +
+  geom_boxplot(outlier.shape = NA)
+
+
+##### how much would be abated at the given price of 15
+
+carb_15 <- cumsum %>% 
+  filter(cpu_max <= 15)
+
+abate_25 <- cumsum %>% 
+  filter(cumsum_carb <= 25000000) 
+
+### this function approximates taking the integral of points w/in an x-y coordinate system
+total_cost_25mt <- pracma::trapz(abate_25$cumsum_carb, abate_25$cpu_max)
+```
+
+
+```{r, locations}
+price <- 200 ### this is the max we are willing to pay  per ton
+
+optimal_noGO <- res %>% 
+    filter(total_carbon_max > 0 & !rxpackage %in% c("031", "032", "033")) %>%     
+    mutate(value = (price * total_carbon_max) - total_cost) %>% 
+    group_by(ID) %>% 
+    filter(value > 0 &
+             value == max(value))
+
+
+
+
+cpu_locs <- left_join(optimal_noGO, counties)
+# calculate the most common package per county and plot this
+plot_loc_geom <- read_sf("../spatial_data", layer = "plot_loc")
+ca_counties <- read_sf("../spatial_data/CA_Counties", layer = "CA_Counties_TIGER2016")
+
+
+
+packages_county <- cpu_locs %>% 
+  group_by(NAME, rxpackage) %>% 
+  tally() %>% 
+  group_by(NAME) %>% 
+  filter(n == max(n)) %>% 
+  sample_n(1) %>% 
+  ungroup()
+
+top_rx <- left_join(ca_counties, packages_county)
+
+
+
+ggplot(top_rx) +
+  geom_sf(aes(fill = rxpackage))
+
+```
+
