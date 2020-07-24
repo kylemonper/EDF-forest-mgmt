@@ -1,5 +1,10 @@
 ---
 title: "edf"
+<<<<<<< HEAD
+=======
+author: "Kyle Monper"
+date: "July 15, 2020"
+>>>>>>> 4d47412d4f9b0f762c6f49a412869e7f4cf42584
 output: html_document
 ---
 
@@ -13,6 +18,7 @@ library(tidyverse)
 library(sf)
 
 
+
 counties <- read_csv("../input/plot_county.csv") %>% 
     select(ID, lat, lon, NAME)
 
@@ -22,7 +28,9 @@ all_data <- read_csv("../output_data/all_data.csv") %>%
 res <- read_csv("../output_data/relative_carb_fire.csv")
 
 
+
 ```
+
 
 
 ```{r}
@@ -42,16 +50,19 @@ opt_tie_break <- optimal %>%
 ```
 
 
-```{r}
-type <- left_join(opt_tie_break, all_data, by = "ID")
 
-test <- type %>% 
-  group_by(rxpackage, fvs_variant) %>% 
-  dplyr::summarise(
+```{r}
+
+type <- left_join(res, all_data, by = "ID")
+
+test <- opt_tie_break %>% 
+  group_by(rxpackage, fvs_variant, ftype) %>% 
+  summarise(
     mean_c = mean(total_carbon_max),
     upper = quantile(total_carbon_max, .95),
     lower = quantile(total_carbon_max, .05)
   )
+
 
 ggplot(test, aes(x = rxpackage, y = mean_c)) +
   geom_bar(stat = "identity") +
@@ -166,5 +177,106 @@ top_rx <- left_join(ca_counties, packages_county)
 ggplot(top_rx) +
   geom_sf(aes(fill = rxpackage))
 
+=======
+ggplot(opt_tie_break, aes(x = rxpackage, y ))
+```
+
+```{r}
+final_score <- all_fire_data %>% 
+  filter(rxcycle == 4, pre_post == "post")
+
+scores <- final_score %>% 
+  select(-biosum_cond_id, -rxcycle, -pre_post) %>% 
+  gather("metric", "value", -ID, -rxpackage) %>% 
+  filter(metric %in% c("CBH", "FRS", "HS_Mod", "HS_Sev"))
+
+carbon_res <- res %>% 
+  select(ID, rxpackage, total_carbon_max)
+
+comb <- left_join(scores, carbon_res)
+
+### categorizing packages into entry criteria groups
+
+low <- c("001", "002", "003", "004", "005", "006","007", "012", "013", "014","015", "017","019", "020")
+med_low <- c("008", "023")
+med_high <- c("009", "010", "024", "025", "027") 
+high <- c("011", "026")
+high_less <- "018"
+cc <- c("032", "033")
+grow_only <- "031"
+
+rx_fire <- c("001", "005", "010", "012", "015", "020", "024")
+
+
+
+labels <- comb %>% 
+  mutate(
+    entry = case_when(
+      rxpackage %in% low ~ "low",
+      rxpackage %in% med_low ~ "med_low",
+      rxpackage %in% med_high ~ "med_high",
+      rxpackage %in% high ~ "high",
+      rxpackage %in% high_less ~ "high_less",
+      rxpackage %in% cc ~ "cc",
+      rxpackage %in% grow_only ~ "grow_only"),
+    post_rx = if_else(rxpackage %in% rx_fire, "rxfire", "other"))
+
+ggplot(labels, aes(x = total_carbon_max, y = value, color = entry)) +
+  geom_point() +
+  geom_jitter() +
+  facet_wrap(~metric, scales = "free")
+
+ggplot(labels, aes(x = total_carbon_max, y = value, color = post_rx)) +
+  geom_point() +
+  geom_jitter() +
+  facet_wrap(~metric, scales = "free")
+
+```
+
+```{r}
+### looking at just the optimal
+opt_sub <- optimal %>% 
+  mutate(rxpackage = if_else(cum_discount_cost == 0, "031", rxpackage)) %>% 
+  distinct() %>% 
+  select(ID, rxpackage, total_carbon_max)
+
+comb_opt <- left_join(opt_sub, scores)
+
+
+
+labels <- comb_opt %>% 
+  mutate(
+    entry = case_when(
+      rxpackage %in% low ~ "low",
+      rxpackage %in% med_low ~ "med_low",
+      rxpackage %in% med_high ~ "med_high",
+      rxpackage %in% high ~ "high",
+      rxpackage %in% high_less ~ "high_less",
+      rxpackage %in% cc ~ "cc",
+      rxpackage %in% grow_only ~ "grow_only"),
+    post_rx = if_else(rxpackage %in% rx_fire, "rxfire", "other"))
+
+ggplot(labels, aes(x = total_carbon_max, y = value, color = entry)) +
+  geom_point() +
+  geom_jitter() +
+  facet_wrap(~metric, scales = "free")
+
+labels_noGO <- filter(labels, rxpackage != "031")
+
+ggplot(labels_noGO, aes(x = total_carbon_max, y = value, color = entry)) +
+  geom_point() +
+  geom_jitter() +
+  facet_wrap(~metric, scales = "free")
+```
+
+```{r}
+counts <- labels_noGO %>% 
+  group_by(entry, rxpackage) %>% 
+  count()
+
+ggplot(labels_noGO, aes(x = entry, total_carbon_max, fill = rxpackage)) +
+  geom_bar(position = "stack", stat = "identity")
+         
+>>>>>>> 4d47412d4f9b0f762c6f49a412869e7f4cf42584
 ```
 
