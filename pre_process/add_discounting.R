@@ -3,8 +3,6 @@
 ## discount carbon fluxes and costs
 
 library(tidyverse)
-source("pre_process/add_chip_decay.R")
-source("pre_process/add_harvest_decay.R")
 options(scipen = 999)
 
 
@@ -15,19 +13,18 @@ add_discounting <- function(df) {
     mutate(chip_carbon = chip_yield_gt * .325)
   
   
-  
+  ### adding year -1 to account for the pre harvest stand carbon
   new_time <- data.frame(time = c(-1,0,1,9,10,11,19,20,21,29,30,31)) %>% 
     left_join(carbon, by = "time")
   
   new_time <- replace_na(new_time, list(merch_carbon = 0, chip_carbon = 0, Total_Stand_Carbon = 0))
   
-  
+  #### the total stand carbon in the previous year is equal the to the amount that was removed plut the current amount
   for (i in c(1,4,7,10)) {
     
     new_time$Total_Stand_Carbon[i] <- new_time$merch_carbon[i+1] + new_time$chip_carbon[i+1] + new_time$Total_Stand_Carbon[i+1]
     
   }
-  
   
   
   pre_post <- new_time %>% 
@@ -70,6 +67,11 @@ add_discounting <- function(df) {
                                  plot_time$each_year)
   }
   
+  ## repeat similar process for fire smoke emissions (i.e extrapolating annual numbers)
+  
+  plot_time <- infer_annual_smoke(plot_time)
+  
+  
   ## add in decay of merchantable wood
   plot_time$merch_decay <- add_harvest_decay(plot_time)
   ## add in decay of chip paths (decay/ biochar)
@@ -104,6 +106,10 @@ add_discounting <- function(df) {
     mutate(cum_discount_decay = cumsum(decay_diff/((1+dc_rate)^time))) %>% 
     mutate(cum_discount_biochar = cumsum(biochar_diff/((1+dc_rate)^time))) %>% 
     mutate(total_discount_carb = cum_discount_carb + cum_discount_merch + cum_discount_biochar + cum_discount_decay) %>% 
+    ## discounted fire 
+    mutate(cum_disc_fire_mod = cumsum(annl_smoke_mod/((1+dc_rate)^time)),
+           cum_disc_fire_sev = cumsum(annl_smoke_sev/((1+dc_rate)^time)),
+           cum_disc_regrowth = cumsum(annl_regwth_rt/((1+dc_rate)^time))) %>% 
     # discounted cost
     mutate(discount_haul_merch = haul_merch_cpa/((1+dc_rate)^time)) %>% 
     mutate(discount_haul_chip = haul_chip_cpa/((1+dc_rate)^time)) %>% 
@@ -121,10 +127,11 @@ add_discounting <- function(df) {
     mutate(discount_val = replace_na(discount_val, 0)) %>% 
     mutate(cum_discount_val = cumsum(discount_val))
   
+  
   ## the information we want to end up with for each distinct plot and package
   final_cumulative <- plot_time_discounts %>% 
     filter(time == 31) %>% 
-    select(biosum_cond_id, ID, owngrpcd, acres, rxpackage, cum_discount_carb, cum_discount_merch, cum_discount_cost, cum_disc_haul_chip , cum_disc_haul_merch, cum_disc_harvest , total_discount_carb, cum_discount_decay, cum_discount_biochar, cum_discount_val)
+    select(biosum_cond_id, ID, owngrpcd, acres, rxpackage, cum_discount_carb, cum_discount_merch, cum_discount_cost, cum_disc_haul_chip , cum_disc_haul_merch, cum_disc_harvest, cum_disc_fire_mod, cum_disc_fire_sev, cum_disc_regrowth, total_discount_carb, cum_discount_decay, cum_discount_biochar, cum_discount_val)
   
   
   
