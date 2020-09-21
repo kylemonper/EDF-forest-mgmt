@@ -2,6 +2,7 @@
 ###  Subset data from Access files
 ###
 
+
 library(tidyverse)
 library(RODBC)
 
@@ -13,78 +14,49 @@ options(scipen = 999)
 ## read in data ##
 ##################
 
+
 #get harvest cost/ relevant acres
-conn <- odbcConnectAccess2007("input/optimizer_results_cycle_1_MaxMerch_Carbon_Stored_2019-12-02_09-43-16.accdb")
-acres <- sqlFetch(conn, "stand_costs_revenue_volume_sum_by_rxpackage", as.is = T)
-cost <- sqlFetch(conn, "product_yields_net_rev_costs_summary_by_rx", as.is = T)
+conn <- odbcConnectAccess2007("c:/FIA_BioSum/edf_072020/optimizer/scenario2/db/optimizer_results.accdb")
+cost <- sqlFetch(conn, "econ_by_rx_cycle", as.is = T)
 odbcCloseAll()
 
 
 
+
+
+cost_sel <- cost %>%
+  select(biosum_cond_id, rxpackage, rxcycle, "haul_chip_cpa" = chip_haul_cost_dpa, "haul_merch_cpa" = merch_haul_cost_dpa, "harvest_onsite_cpa" = harvest_onsite_cost_dpa, "chip_yield_gt" = chip_wt_gt, "merch_yield_cf" = merch_vol_cf, "merch_yield_gt" = merch_wt_gt, "merch_val_dpa" = merch_val_dpa, "chip_val_dpa" = chip_val_dpa) %>% 
+  mutate(complete_cpa = harvest_onsite_cpa + haul_chip_cpa + haul_merch_cpa)
+
+#help w/ memory
+rm(cost)
+
+
+
 #carbon data
-conn <- odbcConnectAccess2007("input/PREPOST_FVS_CARBON.ACCDB")
+conn <- odbcConnectAccess2007("c:/FIA_BioSum/edf_072020/fvs/db/PREPOST_FVS_CARBON.ACCDB")
 pre_carb <- sqlFetch(conn, "PRE_FVS_CARBON", as.is = T)
 post_carb <- sqlFetch(conn, "POST_FVS_CARBON", as.is = T)
 odbcCloseAll()
 
 
+
+pre_carb_sel <- pre_carb %>%
+  select(biosum_cond_id, fvs_variant, rxpackage, rxcycle, Year, Total_Stand_Carbon, Aboveground_Total_Live, Carbon_Released_From_Fire)
+
+post_carb_sel <- post_carb %>%
+  select(biosum_cond_id, fvs_variant, rxpackage, rxcycle, Year, Total_Stand_Carbon, Aboveground_Total_Live, Carbon_Released_From_Fire)
+
+rm(post_carb, pre_carb)
+
+
+
+
 # harvested carbon data
-conn <- odbcConnectAccess2007("input/PREPOST_FVS_HRV_CARBON.ACCDB")
+conn <- odbcConnectAccess2007("c:/FIA_BioSum/edf_072020/fvs/db/PREPOST_FVS_HRV_CARBON.ACCDB")
 pre_carb_hrv <- sqlFetch(conn, "PRE_FVS_HRV_CARBON", as.is = T)
 post_carb_hrv <- sqlFetch(conn, "POST_FVS_HRV_CARBON", as.is = T)
 odbcCloseAll()
-
-## get fire data
-conn <- odbcConnectAccess2007("input/PREPOST_FVS_POTFIRE.ACCDB")
-pre_fire <- sqlFetch(conn, "PRE_FVS_POTFIRE", as.is = T)
-post_fire <- sqlFetch(conn, "POST_FVS_POTFIRE", as.is = T)
-odbcCloseAll()
-
-
-#### get lat long data
-conn <- odbcConnectAccess2007("input/master.mdb")
-plot_m <- sqlFetch(conn, "plot", as.is = T)
-cond_m <- sqlFetch(conn, "cond", as.is = T)
-ftype <- sqlFetch(conn, "CEC_ftype", as.is = T)
-odbcCloseAll()
-
-names(ftype)[1] <- "fortypcd"
-
-type <- ftype %>% 
-  select(fortypcd, MEANING, CEC_type)
-
-plot_sel <- plot_m %>%
-  select(biosum_plot_id, lat, lon, elev)
-
-cond_sel <- cond_m %>%
-  select(biosum_cond_id, biosum_plot_id, fortypcd) %>% 
-  left_join(type)
-
-
-
-cond_lat_lon <- left_join(cond_sel, plot_sel)
-
-
-
-##############################
-#### select columns/join ####
-############################
-
-## harvest cost per acre
-cost_sel <- cost %>%
-  mutate(complete_cpa = harvest_onsite_cpa + haul_chip_cpa + haul_merch_cpa) %>%
-  select(biosum_cond_id, rxpackage, rxcycle, complete_cpa, haul_chip_cpa, haul_merch_cpa, harvest_onsite_cpa, chip_yield_gt, merch_yield_cf, merch_yield_gt, merch_val_dpa, chip_val_dpa) %>%
-  arrange(biosum_cond_id, rxpackage, rxcycle)
-
-
-## stand carbon
-pre_carb_sel <- pre_carb %>%
-  select(biosum_cond_id, fvs_variant, rxpackage, rxcycle, Total_Stand_Carbon, Aboveground_Total_Live)
-
-post_carb_sel <- post_carb %>%
-  select(biosum_cond_id, fvs_variant, rxpackage, rxcycle, Total_Stand_Carbon, Aboveground_Total_Live)
-
-
 
 ## harvest carbon
 pre_hrv_sel <- pre_carb_hrv %>%
@@ -93,16 +65,52 @@ pre_hrv_sel <- pre_carb_hrv %>%
 post_hrv_sel <- post_carb_hrv %>%
   select(biosum_cond_id, rxpackage, rxcycle, Merch_Carbon_Removed)
 
+rm(pre_carb_hrv, post_carb_hrv)
 
-### pot fire
+
+## get fire data
+conn <- odbcConnectAccess2007("c:/FIA_BioSum/edf_072020/fvs/db/PREPOST_FVS_POTFIRE.ACCDB")
+pre_fire <- sqlFetch(conn, "PRE_FVS_POTFIRE", as.is = T)
+post_fire <- sqlFetch(conn, "POST_FVS_POTFIRE", as.is = T)
+odbcCloseAll()
+
 pre_fire_sel <- pre_fire %>% 
   select(biosum_cond_id, rxpackage, rxcycle, Pot_Smoke_Mod, Pot_Smoke_Sev)
 
 post_fire_sel <- post_fire %>% 
   select(biosum_cond_id, rxpackage, rxcycle, Pot_Smoke_Mod, Pot_Smoke_Sev)
 
+rm(pre_fire, post_fire)
 
 
+#### get lat long data
+conn <- odbcConnectAccess2007("c:/FIA_BioSum/edf_072020/db/master.mdb")
+plot_m <- sqlFetch(conn, "plot", as.is = T)
+cond_m <- sqlFetch(conn, "cond", as.is = T)
+#ftype <- sqlFetch(conn, "CEC_ftype", as.is = T)
+odbcCloseAll()
+
+# names(ftype)[1] <- "fortypcd"
+
+# type <- ftype %>% 
+#   select(fortypcd, MEANING, CEC_type)
+
+plot_sel <- plot_m %>%
+  select(biosum_plot_id, lat, lon, elev)
+
+cond_sel <- cond_m %>%
+  select(biosum_cond_id, biosum_plot_id, fortypcd, acres, owngrpcd) # %>% 
+#left_join(type)
+
+
+
+cond_lat_lon <- left_join(cond_sel, plot_sel)
+
+
+
+##############################
+####       join          ####
+############################
 
 ## join carbon tables
 pre_carbon_tot <- left_join(pre_carb_sel, pre_hrv_sel)
@@ -114,24 +122,25 @@ post_full <- left_join(post_carbon_tot, post_fire_sel)
 
 
 ## clean env't to reduce memory load
-rm(list=setdiff(ls(), c("pre_full", "post_full", "cost_sel", "acres", "cond_lat_lon")))
+# rm(list=setdiff(ls(), c("pre_full", "post_full", "cost_sel", "cond_lat_lon")))
 
+cost_ids <- unique(cost_sel$biosum_cond_id)
 
-# join in acreage
-pre_carbon_tot <- left_join(acres[,c("biosum_cond_id", "acres", "owngrpcd")], pre_full)
-post_carbon_tot <- left_join(acres[,c("biosum_cond_id", "acres", "owngrpcd")], post_full)
-
-
-
-
+pre_full_filt <- pre_full %>% filter(biosum_cond_id %in% cost_ids)
+post_full_filt <- post_full %>% filter(biosum_cond_id %in% cost_ids)
 
 ### join to econ
-pre_full <- left_join(pre_carbon_tot, cost_sel)  %>%
+pre_full <- left_join(pre_full_filt, cost_sel)  %>%
   distinct()
-post_full <- left_join(post_carbon_tot, cost_sel)  %>%
+post_full <- left_join(post_full_filt, cost_sel)  %>%
   distinct()
 
 
+ids <- unique(pre_full$biosum_cond_id)
+
+df <- pre_full %>% 
+  filter(biosum_cond_id == ids[1]) %>% 
+  arrange(rxpackage, rxcycle)
 
 #### give cond_id new numbers that will make them easier to join together after reimporting data
 plots <- unique(post_full$biosum_cond_id)
@@ -140,8 +149,8 @@ new_id <- data.frame(biosum_cond_id = plots, ID = 1:length(plots))
 
 plots_loc <- left_join(new_id, cond_lat_lon)
 
-forest_type <- plots_loc %>% 
-  select(biosum_cond_id, ID, ftype = CEC_type)
+IDs <- plots_loc %>% 
+  select(biosum_cond_id, ID, fortypcd acres, owngrpcd, lat, lon)
 
 write_csv(plots_loc, "output_data/plot_loc.csv")
 #test <- read_csv("output_data/plot_loc.csv")
@@ -155,13 +164,13 @@ post_full$section <- "post"
 ## full df 
 all_data <- bind_rows(pre_full,post_full)
 ### add ID + forest type
-all_data <- left_join(all_data, forest_type) 
+all_data <- left_join(all_data, IDs) 
 
 ## clean environment of everything except the new full dataset
-rm(list=setdiff(ls(), "all_data"))
+# rm(list=setdiff(ls(), "all_data"))
 
 write_csv(all_data, "output_data/all_data.csv")
-#all_data <- read_csv("all_data.csv")
+#all_data <- read_csv("output_data/all_data.csv")
 
 
 
@@ -174,28 +183,28 @@ write_csv(all_data, "output_data/all_data.csv")
 
 
 # get relevent tables from the fvs summary output
-conn <- odbcConnectAccess2007("input/PREPOST_FVS_SUMMARY.ACCDB")
+conn <- odbcConnectAccess2007("c:/FIA_BioSum/edf_072020/fvs/db/PREPOST_FVS_SUMMARY.ACCDB")
 pre_sum <- sqlFetch(conn, "PRE_FVS_SUMMARY", as.is = T)
 post_sum <- sqlFetch(conn, "POST_FVS_SUMMARY", as.is = T)
 odbcCloseAll()
 
 
 # get potential fire data
-conn <- odbcConnectAccess2007("input/PREPOST_FVS_POTFIRE.ACCDB")
+conn <- odbcConnectAccess2007("c:/FIA_BioSum/edf_072020/fvs/db/PREPOST_FVS_POTFIRE.ACCDB")
 pre_fire <- sqlFetch(conn, "PRE_FVS_POTFIRE", as.is = T)
 post_fire <- sqlFetch(conn, "POST_FVS_POTFIRE", as.is = T)
 odbcCloseAll()
 
-
+# processor sce
 ## get % resistnat basal area from _compute
-conn <- odbcConnectAccess2007("input/PREPOST_FVS_COMPUTE.ACCDB")
+conn <- odbcConnectAccess2007("c:/FIA_BioSum/edf_072020/fvs/db/PREPOST_FVS_COMPUTE.ACCDB")
 pre_comp <- sqlFetch(conn, "PRE_FVS_COMPUTE", as.is = T)
 post_comp <- sqlFetch(conn, "POST_FVS_COMPUTE", as.is = T)
 odbcCloseAll()
 
 
 # get canopy base heigth data
-conn <- odbcConnectAccess2007("input/PREPOST_FVS_STRCLASS.ACCDB")
+conn <- odbcConnectAccess2007("c:/FIA_BioSum/edf_072020/fvs/db/PREPOST_FVS_STRCLASS.ACCDB")
 pre_str <- sqlFetch(conn, "PRECBH", as.is = T)
 post_str <- sqlFetch(conn, "POSTCBH", as.is = T)
 odbcCloseAll()

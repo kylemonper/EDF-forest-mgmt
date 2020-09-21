@@ -11,9 +11,9 @@
 # join, convert to mmb, and select appropriate data for private and federal
 
 
-counties <- read_csv("plot_county.csv") %>% 
-  select(ID, lat, lon, NAME)
-harvest_2012 <- read_csv("CA_harvest_2012.csv")
+counties <- readxl::read_xls("input/plot_counties.xls") %>% 
+  select(ID, NAME)
+harvest_2012 <- read_csv("input/CA_harvest_2012.csv")
 
 ### joing with plot_all (from carbon_2.R after running through line 144)
 plot_county <- left_join(all_data, counties)
@@ -28,8 +28,8 @@ plot_bf <- mutate(plot_actual, merch_yield_mmbf = round(merch_yield_cf * 12 / 10
 #### select only "baseline packages" (clearcut for private, and !!!!!!002!!!!! for federal), and first cycle
 # is 002 the right package to use?
 plot_sel <- plot_bf %>% 
-  filter(rxpackage == "032" & owngrpcd == 40 |
-           rxpackage == "002" & owngrpcd == 10) %>% 
+  filter(rxpackage == "700" & owngrpcd == 40 |
+           rxpackage == "010" & owngrpcd == 10) %>% 
   select(biosum_cond_id, ID, acres, owngrpcd, rxcycle, rxpackage, NAME, mmbf_county, merch_yield_mmbf) %>% 
   rename("county" = "NAME")
 ### get rid of pre and post
@@ -115,7 +115,7 @@ randomize_sites <- function(location, ownrcd){
       
       ### if a site was previously selected, use the same assigned harvested acres as the first time around
       if(!is.null(final_results)) {
-        joined <- left_join(data_filt, final_results[,c("biosum_cond_id", "random_harvest_assign")], by = "biosum_cond_id")
+        joined <- left_join(data_filt, final_results[,c("ID", "random_harvest_assign")], by = "ID")
       } else {
         joined <- data_filt 
       }
@@ -133,10 +133,22 @@ randomize_sites <- function(location, ownrcd){
         random_harvest_acres <- data.frame(random_harvest_assign = rexp(nrow(joined),1/ratio))
         
         ## bind this column to data and get total random harvest
-        acres_assigned <- bind_cols(joined, random_harvest_acres)
+        suppressMessages(
+          acres_assigned <- bind_cols(joined, random_harvest_acres)
+          
+        )
+        
+        
+        if(length(acres_assigned) == 12) {
+          names(acres_assigned)[11] <- "random_harvest_assign"
+          names(acres_assigned)[12] <- "random_harvest_assign1"
+        }
+          
         
         ### if a site was previously selected, use the same assigned harvested acres as the first time around
         if(any(is.na(acres_assigned$random_harvest_assign))) {
+          
+          
           total_acres <- acres_assigned %>% 
             mutate(random_harvest_assign = if_else(is.na(random_harvest_assign), random_harvest_assign1, random_harvest_assign))
         } else {

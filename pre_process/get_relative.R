@@ -3,7 +3,7 @@
 ### by subtracting the baseline
 
 
-get_relative <- function(data, inc_tmp = FALSE) {
+get_relative <- function(data, inc_tmp = TRUE) {
   
  
   if (inc_tmp) {
@@ -28,8 +28,8 @@ get_relative <- function(data, inc_tmp = FALSE) {
     ### if private and cc, add cost of thp, if private and thin, add ntmp
     #~ then add this to the cum_discount_cost
     df <- data %>% 
-      mutate(plan_cost = if_else(owngrpcd == 40 & rxpackage %in% c("032", "033"), total_thp_simp*acres, 
-                                 if_else(owngrpcd == 40 & !rxpackage %in% c("032", "033"), ntmp_simple_average*acres, 0)),
+      mutate(plan_cost = if_else(owngrpcd == 40 & rxpackage == "700", total_thp_simp*acres, 
+                                 if_else(owngrpcd == 40 & rxpackage != "700", ntmp_simple_average*acres, 0)),
              cum_discount_cost = cum_discount_cost + plan_cost)
   } else {
     df <- data
@@ -51,8 +51,8 @@ get_relative <- function(data, inc_tmp = FALSE) {
   ## get grow only for each plot
   
   grow_only <- df %>% 
-    filter(rxpackage == "031") %>% 
-    select(biosum_cond_id, ID, acres, rxpackage, cum_discount_carb, cum_disc_fire_mod, cum_disc_fire_sev) %>% 
+    filter(rxpackage == "999") %>% 
+    select(ID, acres, rxpackage, cum_discount_carb, cum_disc_fire_mod, cum_disc_fire_sev) %>% 
     rename("grow_only_carb" = "cum_discount_carb") %>% 
     rename("GO_fire_mod" = "cum_disc_fire_mod") %>% 
     rename("GO_fire_sev" = "cum_disc_fire_sev")
@@ -60,11 +60,12 @@ get_relative <- function(data, inc_tmp = FALSE) {
   
   ## get relevent data from selected_sites
   selected_data <- selected_sites %>% 
-    select(biosum_cond_id, ID, acres, rxpackage, random_harvest_assign)
+    select(ID, acres, rxpackage, random_harvest_assign)
+  
   
   ## get discounted carbon values for each of these selected sites
   
-  selected_disc <- left_join(selected_data, df, by = c("biosum_cond_id","acres", "ID", "rxpackage")) %>% 
+  selected_disc <- left_join(selected_data, df, by = c("ID", "rxpackage")) %>% 
     rename("rxpackage_sel" = "rxpackage") %>% # rename columns to distinguish them before joining
     rename("discount_carb_sel" = "cum_discount_carb") %>% 
     rename("cost_baseline_rx" = "cum_discount_cost") %>% 
@@ -75,7 +76,7 @@ get_relative <- function(data, inc_tmp = FALSE) {
     distinct()
   
   
-  all_base <- left_join(grow_only, selected_disc, by = c("acres", "ID")) %>% 
+  all_base <- left_join(grow_only, selected_disc, by = c("ID")) %>% 
     distinct()
   
   
@@ -103,7 +104,7 @@ get_relative <- function(data, inc_tmp = FALSE) {
           # update base carb by subtracting possible emissions
            base_carb_mod = base_disc_carb - base_fire_mod,
            base_carb_sev = base_disc_carb - base_fire_sev) %>% 
-    dplyr::select(ID, base_carb_sev, base_carb_mod, base_disc_cost, base_disc_val)
+    dplyr::select(ID,base_disc_carb, base_carb_sev, base_carb_mod, base_disc_cost, base_disc_val)
   
   ## joing togeter and calculate relative carbon
   incorp_base <- left_join(df, baseline_total) %>% 
@@ -114,14 +115,17 @@ get_relative <- function(data, inc_tmp = FALSE) {
     ### update total_disc_carb based on emissions
     mutate(tot_disc_carb_mod = total_discount_carb - cum_disc_fire_mod,
            tot_disc_carb_sev = total_discount_carb - cum_disc_fire_sev) %>% 
-    mutate(relative_carb_min = tot_disc_carb_sev - base_carb_mod,
+    mutate(relative_carb_grow = total_discount_carb - base_disc_carb,
+           relative_carb_min = tot_disc_carb_sev - base_carb_mod,
            relative_carb_max = tot_disc_carb_mod - base_carb_sev,
            relative_cost = cum_discount_cost-base_disc_cost,
            relative_val = cum_discount_val-base_disc_val) %>% 
-    mutate(total_carbon_max = relative_carb_max * acres,
+    mutate(total_carbon_grow = relative_carb_grow * acres,
+           total_carbon_max = relative_carb_max * acres,
            total_carbon_min = relative_carb_min * acres,
            total_cost = relative_cost* acres,
            total_val = relative_val*acres,
+           cpu_grow = total_cost/total_carbon_grow,
            cpu_max = total_cost/total_carbon_max,
            cpu_min = total_cost/total_carbon_min,
            cpu_rev_max = (total_cost-total_val)/total_carbon_max,

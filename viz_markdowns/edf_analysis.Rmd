@@ -1,10 +1,7 @@
 ---
 title: "edf"
-<<<<<<< HEAD
-=======
 author: "Kyle Monper"
 date: "July 15, 2020"
->>>>>>> 4d47412d4f9b0f762c6f49a412869e7f4cf42584
 output: html_document
 ---
 
@@ -15,41 +12,399 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 library(tidyverse)
+library(ggthemes)
 library(sf)
+library(scales) # for viz
 
 
 
 counties <- read_csv("../input/plot_county.csv") %>% 
-    select(ID, lat, lon, NAME)
+    dplyr::select(ID, lat, lon, NAME)
 
 all_data <- read_csv("../output_data/all_data.csv") %>% 
-  select(ID, ftype, fvs_variant, owngrpcd)
+  dplyr::select(ID, fvs_variant, owngrpcd)
 
-res <- read_csv("../output_data/relative_carb_fire.csv")
+res_500k <- read_csv("../output_data/relative_carb_fire_500k.csv")
+res_1MM <- read_csv("../output_data/relative_carb_fire_1MM.csv")
+res_5MM <- read_csv("../output_data/relative_carb_fire_5MM.csv")
+res_10MM <- read_csv("../output_data/relative_carb_fire_10MM.csv")
 
+
+all_fire_data <- read_csv("../output_data/all_fire_data.csv")
 
 
 ```
 
 
-
+### 500k
 ```{r}
 price <- 200 ### this is the max we are willing to pay  per ton
 
-optimal <- res %>% 
-    filter(total_carbon_max > 0 ) %>%     
+
+get_opt <- function(data, carbon_max = TRUE, scenar) {
+  
+  optimal <- data %>% 
+    filter(total_carbon_max > 0 ) %>%   
+   dplyr::mutate(rxpackage = if_else(cum_discount_cost == 0, "999", rxpackage)) %>% 
+  distinct() %>% 
+  filter(rxpackage != "999") %>% 
     mutate(value = (price * total_carbon_max) - total_cost) %>% 
     group_by(ID) %>% 
     filter(value > 0 &
              value == max(value))
+  
+  opt_tie_break <- optimal %>% 
+    group_by(ID) %>% 
+    sample_n(1) %>% 
+    ungroup()
+  
+  if(carbon_max) {
+    cumsum <- opt_tie_break %>% 
+    arrange(cpu_max) %>% 
+    filter(cpu_max > -100 & cpu_max < 200) %>% 
+    mutate(cumsum_carb = cumsum(total_carbon_max),
+           cumsum_fire = cumsum(total_carbon_max),
+           cpu = cpu_max)
+    
+    
+    cumsum[,"inc_fire"] <- "with fire"
+  } else {
+    cumsum <- opt_tie_break %>% 
+    filter(total_carbon_grow > 0) %>% 
+    arrange(cpu_grow) %>% 
+    filter(cpu_grow > -100 & cpu_grow < 200) %>% 
+    mutate(cumsum_carb = cumsum(total_carbon_grow),
+           cumsum_fire = cumsum(total_carbon_max),
+           cpu = cpu_grow)
+    
+    cumsum[,"inc_fire"] <- "without fire"
+  }
+   
+  cumsum[,"scenario"] <- scenar
+  
+  
+  return(cumsum[,c("ID", "scenario", "rxpackage", "inc_fire", "cpu", "cumsum_carb", "total_carbon_grow", "total_carbon_max", "cumsum_fire")])
+  
+}
 
-opt_tie_break <- optimal %>% 
-  group_by(ID) %>% 
-  sample_n(1) %>% 
-  ungroup()
+opt_500k_fire <- get_opt(res_500k, carbon_max = TRUE, scenar = "500k")
+opt_500k_wofire <- get_opt(res_500k, carbon_max = F, scenar = "500k")
+
+opt_1MM_fire <- get_opt(res_1MM, carbon_max = TRUE, scenar = "1MM")
+opt_1MM_wofire <- get_opt(res_1MM, carbon_max = F, scenar = "1MM")
+
+opt_5MM_fire <- get_opt(res_5MM, carbon_max = TRUE, scenar = "5MM")
+opt_5MM_wofire <- get_opt(res_5MM, carbon_max = F, scenar = "5MM")
+
+opt_10MM_fire <- get_opt(res_10MM, carbon_max = TRUE, scenar = "10MM")
+opt_10MM_wofire <- get_opt(res_10MM, carbon_max = F, scenar = "10MM")
+
+
 ```
 
 
+
+
+```{r}
+
+combined <- bind_rows(opt_1MM_fire, opt_1MM_wofire, opt_500k_fire, opt_500k_wofire, opt_5MM_fire, opt_5MM_wofire, opt_10MM_fire, opt_10MM_wofire)
+
+
+combined$scenario <- factor(combined$scenario, levels = c("500k", "1MM", "5MM", "10MM"))
+
+
+filt <- combined %>% 
+  filter(scenario != "500k") %>% 
+  mutate(scen_name = 
+           case_when(
+             scenario == "1MM" ~ "Below Avg.",
+             scenario == "5MM" ~ "Avg.",
+             scenario == "10MM" ~ "Above Avg."))
+
+ggplot(combined, aes(cumsum_carb, cpu,linetype = inc_fire, color = inc_fire)) +
+  geom_line() +
+  facet_wrap(~scenario) +
+  scale_x_continuous(limits = c(0, 6000000),label=comma) +
+  scale_y_continuous(limits = c(-150,220), expand = c(0,0)) +
+  labs(
+    x = "Tons of Carbon",
+    y = "$/Ton of Carbon",
+    color = "calculation",
+    linetype = "calculation"
+  ) + 
+  theme_bw()
+
+ggplot(opt_5MM_fire, aes(cumsum_carb, cpu,linetype = inc_fire, color = inc_fire)) +
+  geom_line() +
+  scale_x_continuous(limits = c(0, 1500000),label=comma, expand = c(0,0)) +
+  scale_y_continuous(limits = c(-50,220), expand = c(0,0)) +
+  labs(
+    x = "Tons of Carbon",
+    y = "$/Ton of Carbon",
+    color = "calculation",
+    linetype = "calculation"
+  ) + 
+  theme_bw()
+
+ggplot(filter(combined, scenario == "5MM"), aes(cumsum_carb, cpu,linetype = inc_fire, color = inc_fire)) +
+  geom_line() +
+  scale_x_continuous(limits = c(0, 1500000),label=comma, expand = c(0,0)) +
+  scale_y_continuous(limits = c(-50,220), expand = c(0,0)) +
+  labs(
+    x = "Tons of Carbon",
+    y = "$/Ton of Carbon",
+    color = "calculation",
+    linetype = "calculation"
+  ) + 
+  theme_bw()
+
+```
+
+annualized
+```{r}
+annlize <- combined %>% 
+  mutate(cumsum_carb_annl = cumsum_carb*((.05*(1.05)^32)/((1.05^32) - 1)))
+
+
+
+ggplot(annlize, aes(cumsum_carb_annl, cpu,linetype = inc_fire, color = inc_fire)) +
+  geom_line() +
+  facet_wrap(~scenario) +
+  scale_x_continuous(limits = c(0, 400000),label=comma) +
+  scale_y_continuous(limits = c(-150,220), expand = c(0,0)) +
+  labs(
+    x = "Tons of Carbon",
+    y = "$/Ton of Carbon"
+  ) + 
+  theme_bw()
+```
+
+do only three scenarios
+```{r, fig.width=8}
+filt <- annlize %>% 
+  filter(scenario != "500k") %>% 
+  mutate(scen_name = 
+           case_when(
+             scenario == "1MM" ~ "Below Avg.",
+             scenario == "5MM" ~ "Historical Avg.",
+             scenario == "10MM" ~ "Above Avg."))
+
+
+filt$scen_name <- factor(filt$scen_name, levels = c("Below Avg.", "Historical Avg.", "Above Avg."))
+
+
+
+ggplot(filt, aes(cumsum_carb_annl/1000, cpu,linetype = inc_fire, color = inc_fire)) +
+  geom_line() +
+  facet_wrap(~scen_name) +
+  scale_x_continuous(limits = c(0, 300),label=comma) +
+  scale_y_continuous(limits = c(-50,220), expand = c(0,0)) +
+  labs(
+    x = "Annualized Carbon Stored (thousands of tons)",
+    y = "$/Ton of Carbon Stored",
+    color = "calculation",
+    linetype = "calculation"
+  ) + 
+  theme_solarized() + scale_colour_solarized('red')
+
+
+```
+
+
+cost calculations
+```{r}
+scenarios <- unique(filt$scen_name)
+calcs <- unique(filt$inc_fire)
+prices <- c(17, 100)
+
+filt <- filt %>% 
+  mutate(
+    fire_emiss = total_carbon_max - total_carbon_grow
+  )
+
+res <- NULL
+
+for(j in 1:length(scenarios)) {
+  for(k in 1:length(calcs)) {
+    for(l in 1:length(prices)) {
+      tmp <- filt %>% 
+  filter(scen_name == scenarios[j] &
+           inc_fire == calcs[k] &
+           cpu <= prices[l]) %>% 
+  mutate(c_stored = max(cumsum_fire),
+         cost = pracma::trapz(.$cumsum_fire, .$cpu),
+         price = prices[l]) %>% 
+  select(names(df)) %>% 
+  sample_n(1)
+
+
+res <- bind_rows(res, tmp)
+      
+    }
+  }
+  
+}
+
+
+
+
+
+```
+
+get plot locations and forest type
+```{r plot locations}
+plot_locs <- read_csv("../output_data/plot_loc.csv")
+
+ftype <- read_delim("../input/spp_crosswalk.txt", delim = ",")
+
+joined <- left_join(plot_locs, ftype)
+
+above_avg_locs <- left_join(opt_10MM_fire, joined)
+above_avg_locs_100 <- above_avg_locs %>% 
+  filter(cpu < 110)
+
+write_csv(above_avg_locs_100, "above_avg_locs.csv")
+
+```
+
+get total emissions each year
+```{r total emissions}
+selected_sites <- read_csv("../output_data/baseline_sites.csv")
+disc_10MM <- read_csv("../output_data/all_discounted_10MM.csv")
+disc_5MM <- read_csv("../output_data/all_discounted_5MM.csv")
+disc_1MM <- read_csv("../output_data/all_discounted_1MM.csv")
+
+create_baseline <- function(df){
+  grow_only <- df %>% 
+    filter(rxpackage == "999") %>% 
+    select(ID, acres, rxpackage, cum_discount_carb, cum_disc_fire_mod, cum_disc_fire_sev) %>% 
+    rename("grow_only_carb" = "cum_discount_carb") %>% 
+    rename("GO_fire_mod" = "cum_disc_fire_mod") %>% 
+    rename("GO_fire_sev" = "cum_disc_fire_sev")
+  
+  
+  ## get relevent data from selected_sites
+  selected_data <- selected_sites %>% 
+    select(ID, acres, rxpackage, random_harvest_assign)
+  
+  
+  ## get discounted carbon values for each of these selected sites
+  
+  selected_disc <- left_join(selected_data, df, by = c("ID", "rxpackage")) %>% 
+    rename("rxpackage_sel" = "rxpackage") %>% # rename columns to distinguish them before joining
+    rename("discount_carb_sel" = "cum_discount_carb") %>% 
+    rename("cost_baseline_rx" = "cum_discount_cost") %>% 
+    rename("discount_merch_sel" = "cum_discount_merch") %>% 
+    rename("total_carb_sel" = "total_discount_carb") %>% 
+    rename("fire_mod_sel" = "cum_disc_fire_mod") %>% 
+    rename("fire_sev_sel" = "cum_disc_fire_sev") %>% 
+    distinct()
+  
+  
+  all_base <- left_join(grow_only, selected_disc, by = c("ID")) %>% 
+    distinct
+  
+  baseline_total <- all_base %>% 
+    mutate(random_harvest_assign = replace_na(random_harvest_assign, 0),
+           total_carb_sel = replace_na(total_carb_sel,0),
+           cost_baseline_rx = replace_na(cost_baseline_rx,0),
+           cum_discount_val = replace_na(cum_discount_val,0),
+           fire_mod_sel = replace_na(fire_mod_sel, 0),
+           fire_sev_sel = replace_na(fire_sev_sel, 0),
+          ## calc relative percents
+           pct_grow_only = ((acres-random_harvest_assign)/acres),
+           pct_select = (random_harvest_assign/acres),
+          # calc base carb, fire, cost and val
+           base_disc_carb = (pct_grow_only*grow_only_carb)+(pct_select*total_carb_sel), 
+           base_fire_mod = (pct_grow_only*GO_fire_mod)+(pct_select*fire_mod_sel), 
+           base_fire_sev = (pct_grow_only*GO_fire_sev)+(pct_select*fire_sev_sel), 
+           base_disc_cost = (pct_select*cost_baseline_rx),
+           base_disc_val = (pct_select*cum_discount_val),
+          # update base carb by subtracting possible emissions
+           base_carb_mod = base_disc_carb - base_fire_mod,
+           base_carb_sev = base_disc_carb - base_fire_sev) %>% 
+    dplyr::select(ID,base_fire_sev)
+  
+  acres <- df %>% select(ID, acres)
+  
+  res <- left_join(baseline_total, acres) %>% 
+    distinct()
+}
+ 
+base_10MM <- create_baseline(disc_10MM)
+base_5MM <- create_baseline(disc_5MM)
+base_1MM <- create_baseline(disc_1MM)
+
+
+tot_emis_10MM <- sum(base_10MM$base_fire_sev * base_10MM$acres)
+tot_emis_5MM <- sum(base_5MM$base_fire_sev * base_5MM$acres)
+tot_emis_1MM <- sum(base_1MM$base_fire_sev * base_1MM$acres)
+
+baseline_emis <- data.frame(scen_name = c("Above Avg.", "Historical Avg.", "Below Avg."), 
+                            condition = "total emissions",
+                            emitted = c(tot_emis_10mm, tot_emis_5MM, tot_emis_1MM))
+
+scen_emis <- res %>% 
+  filter(price == 100,
+         inc_fire == "with fire") %>% 
+  mutate(condition = "avoided emissions") %>% 
+  select(scen_name, condition, c_stored) %>% 
+  rename(emitted = c_stored)
+
+all_emis <- bind_rows(baseline_emis, scen_emis)
+
+
+
+```
+
+graph emissions
+```{r raph emissions, fig.width=8}
+
+all_emis$scen_name <- factor(all_emis$scen_name, levels = c("Below Avg.", "Historical Avg.", "Above Avg."))
+
+
+
+ggplot(all_emis, aes(condition, emitted/1000000, color = condition, fill = condition)) +
+  geom_col() +
+  facet_wrap(~scen_name) +
+  scale_y_continuous(expand = c(0,0), limits = c(0, 180)) +
+  scale_color_manual(values = c("darkgreen", "tan4")) +
+  scale_fill_manual(values = c("darkgreen", "tan4")) +
+  labs(
+    x = "",
+    y = "Present Value Emissions (Millions of Tons)"
+  ) +
+  theme_solarized() + 
+theme(
+  legend.title    = element_blank(),
+    legend.box      = "horizontal",
+    legend.position = "bottom",
+  strip.background =element_rect(fill="wheat1")
+)
+```
+
+
+```{r, MCC}
+
+
+
+
+
+ggplot(cumsum, aes(cumsum_carb, cpu_max)) +
+  geom_point(aes(color = cpu_max)) +
+  scale_colour_gradient2(low = "forestgreen", mid = "yellow", high = "red", midpoint = 50) +
+  scale_x_continuous(limits = c(0, 2000000),label=comma) +
+  scale_y_continuous(limits = c(-150,220), expand = c(0,0)) +
+  theme_minimal(base_size = 24) +
+  theme(legend.position = "none") +
+  labs(
+    x = "Tons of Carbon",
+    y = "$/Ton of Carbon"
+  )
+
+
+
+```
 
 ```{r}
 
@@ -67,33 +422,6 @@ test <- opt_tie_break %>%
 ggplot(test, aes(x = rxpackage, y = mean_c)) +
   geom_bar(stat = "identity") +
   facet_wrap(~fvs_variant)
-```
-
-```{r, MCC}
-cumsum <- opt_tie_break %>% 
-  arrange(cpu_max) %>% 
-  filter(cpu_max > -100 & cpu_max < 200) %>% 
-  mutate(cumsum_carb = cumsum(total_carbon_max))
-
-
-
-library(scales) # for comma in x axis
-
-ggplot(cumsum, aes(cumsum_carb, cpu_max)) +
-  geom_point(aes(color = cpu_max)) +
-  scale_colour_gradient2(low = "forestgreen", mid = "yellow", high = "red", midpoint = 50) +
-  scale_x_continuous(limits = c(0, 60000000),label=comma) +
-  scale_y_continuous(limits = c(-150,220), expand = c(0,0)) +
-  theme_minimal(base_size = 24) +
-  theme(legend.position = "none") +
-  labs(
-    x = "Tons of Carbon",
-    y = "$/Ton of Carbon",
-    title = "MCC (w/ CC)"
-  )
-
-
-
 ```
 
 ```{r, Pacakge counts}
@@ -177,7 +505,7 @@ top_rx <- left_join(ca_counties, packages_county)
 ggplot(top_rx) +
   geom_sf(aes(fill = rxpackage))
 
-=======
+
 ggplot(opt_tie_break, aes(x = rxpackage, y ))
 ```
 
@@ -277,6 +605,223 @@ counts <- labels_noGO %>%
 ggplot(labels_noGO, aes(x = entry, total_carbon_max, fill = rxpackage)) +
   geom_bar(position = "stack", stat = "identity")
          
->>>>>>> 4d47412d4f9b0f762c6f49a412869e7f4cf42584
+
 ```
+
+
+
+```{r, opt by fire score}
+
+fire_scores <- all_fire_data %>% 
+  select(ID,rxpackage, FRS, HS_Sev, HS_Mod)
+
+res_fire <- left_join(res, fire_scores) %>% 
+  dplyr::mutate(rxpackage = if_else(cum_discount_cost == 0, "031", rxpackage)) %>% 
+  distinct() %>% 
+  filter(rxpackage != "031")
+
+avg_fire_score <- res_fire %>% 
+  group_by(ID, rxpackage) %>% 
+  summarise(avg_frs = mean(FRS),
+            avg_HS_mod = mean(HS_Mod),
+            avg_HS_sev = mean(HS_Sev),
+            total_cost = total_cost)
+
+opt_fire <- avg_fire_score %>% 
+  group_by(ID) %>% 
+  filter(avg_frs == max(avg_frs)) %>% 
+  filter(avg_HS_sev == min(avg_HS_sev)) %>% 
+  filter(avg_HS_mod == min(avg_HS_mod)) %>% 
+  filter(total_cost == min(total_cost)) %>% 
+  sample_n(1)
+
+```
+
+
+```{r}
+opt_data <- left_join(opt_fire, res)
+
+
+cum_sum <- opt_data %>% 
+  select(ID, rxpackage, total_carbon_max, cpu_max) %>% 
+  filter(total_carbon_max > 0 ) %>% 
+  filter(cpu_max > -100 & cpu_max < 200) %>% 
+  dplyr::arrange(cpu_max) 
+cum_sum$cumsum_carb <- cumsum(cum_sum$total_carbon_max)
+
+
+
+ggplot(cum_sum, aes(cumsum_carb, cpu_max)) +
+  geom_point(aes(color = cpu_max)) +
+  scale_colour_gradient2(low = "forestgreen", mid = "yellow", high = "red", midpoint = 50) +
+  scale_x_continuous(limits = c(0, 500000),label=comma) +
+  scale_y_continuous(limits = c(-150,220), expand = c(0,0)) +
+  theme_minimal(base_size = 24) +
+  theme(legend.position = "none") +
+  labs(
+    x = "Tons of Carbon",
+    y = "$/Ton of Carbon",
+    title = "MCC (w/ CC)"
+  )
+```
+
+```{r, OG MCC}
+
+res_og <- read_csv("../output_data/relative_carb_og_05.csv")
+
+optimal <- res_og %>% 
+    filter(total_carbon > 0 ) %>%   
+   dplyr::mutate(rxpackage = if_else(cum_discount_cost == 0, "031", rxpackage)) %>% 
+  distinct() %>% 
+  filter(rxpackage != "031") %>% 
+    mutate(value = (price * total_carbon) - total_cost,
+           cpu_max = cpu) %>% 
+    group_by(ID) %>% 
+    filter(value > 0 &
+             value == max(value))
+
+opt_tie_break <- optimal %>% 
+  group_by(ID) %>% 
+  sample_n(1) %>% 
+  ungroup()
+
+cumsum_OG <- opt_tie_break %>% 
+  arrange(cpu_max) %>% 
+  filter(cpu_max > -100 & cpu_max < 200) %>% 
+  mutate(cumsum_carb = cumsum(total_carbon))
+
+
+
+```
+
+
+```{r}
+## plot all MCC together for comparison
+
+cumsum_OG$method <- "Original MCC"
+cum_sum$method <- "Opt. for fire res"
+cumsum$method <- "inc. fire emission"
+
+
+all <- bind_rows(cumsum_OG, cum_sum, cumsum)
+
+
+ggplot(all, aes(cumsum_carb, cpu_max, group = method, color = method)) +
+  geom_line() +
+  scale_x_continuous(limits = c(0, 2000000),label=comma) +
+  labs(
+    x = "Tons of Carbon",
+    y = "$/Ton of Carbon"
+  ) +
+  theme_bw()
+
+
+```
+
+
+```{r, gut check emissions}
+### check how much emissions occur each year under the baseline 
+
+selected_sites <- read_csv("../output_data/baseline_sites.csv")
+
+sel <- selected_sites %>% 
+  select(ID, rxpackage)
+
+filt <- res %>% 
+  filter(rxpackage == "031")
+
+GO <- anti_join(filt, sel, by = "ID")
+
+other <- left_join(sel, res)
+
+all_base <- bind_rows(GO, other) %>% 
+  distinct()
+
+total_emission <- sum(all_base$cum_disc_fire_sev)
+
+
+### checking how many acres are burned
+probs <- read_csv("../input/plot_locs_pfire.csv") %>% 
+  select(ID, prob)
+
+all_base_prob <- left_join(all_base, probs)
+
+total_burn <- sum(all_base_prob$acres * (all_base_prob$prob/100))
+
+```
+
+
+```{r, fire res of opt carbon}
+fire_scores <- all_fire_data %>% 
+  select(ID,rxpackage, FRS, HS_Sev, HS_Mod)
+
+res_fire <- left_join(res, fire_scores) %>% 
+  dplyr::mutate(rxpackage = if_else(cum_discount_cost == 0, "031", rxpackage)) %>% 
+  distinct() %>% 
+  filter(rxpackage != "031")
+
+avg_fire_score <- res_fire %>% 
+  group_by(ID, rxpackage) %>% 
+  summarise(avg_frs = mean(FRS),
+            avg_HS_mod = mean(HS_Mod),
+            avg_HS_sev = mean(HS_Sev),
+            total_cost = total_cost) %>% 
+  distinct()
+
+#### join this to the optimal for carbon
+opt_carb_fire <- left_join(opt_tie_break, avg_fire_score)
+opt_w_ftype <- left_join(opt_carb_fire, all_data) %>% distinct()
+
+sel <- select(opt_w_ftype, ftype, fvs_variant, avg_frs) %>% 
+  mutate(type = "opt carb")
+
+opt_fire_ftype <- left_join(opt_fire, all_data) %>% distinct() %>% 
+  select(ftype, fvs_variant, avg_frs) %>% 
+  mutate(type = "opt fire")
+
+both <- bind_rows(sel, opt_fire_ftype)
+
+ggplot(both, aes(ftype, avg_frs, fill = type)) +
+  geom_boxplot()
+ggplot(both, aes(fvs_variant, avg_frs, fill = type)) +
+  geom_boxplot()
+
+```
+
+
+
+```{r}
+package_count <- opt_fire %>% 
+  group_by(rxpackage) %>% 
+  tally()
+
+package_count$rxpackage <- factor(package_count$rxpackage, levels = package_count$rxpackage[order(-package_count$n)])
+
+ggplot(package_count, aes(as.factor(rxpackage), n)) +
+  geom_col() +
+  labs(
+    title = "counts of optimal packages",
+    x = "treatment package", 
+    y = "count"
+  ) +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

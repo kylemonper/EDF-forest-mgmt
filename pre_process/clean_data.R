@@ -7,25 +7,9 @@ options(scipen = 999)
 
 
 clean_data <- function(data) {
-  # filter down to just one plot
-  plot_all <- all_data %>% 
-    mutate(time = rxcycle) 
-  
-  #### match cycle to year ####
 
-    plot_all$time = ifelse(plot_all$time==1 & plot_all$section == "pre", 0, plot_all$time) 
-    plot_all$time = ifelse(plot_all$time==2 & plot_all$section == "pre", 10, plot_all$time) 
-    plot_all$time = ifelse(plot_all$time==3 & plot_all$section == "pre", 20, plot_all$time) 
-    plot_all$time = ifelse(plot_all$time==4 & plot_all$section == "pre", 30, plot_all$time) 
-    plot_all$time = ifelse(plot_all$time==1 & plot_all$section == "post", 1, plot_all$time) 
-    plot_all$time = ifelse(plot_all$time==2 & plot_all$section == "post", 11, plot_all$time) 
-    plot_all$time = ifelse(plot_all$time==3 & plot_all$section == "post", 21, plot_all$time) 
-    plot_all$time = ifelse(plot_all$time==4 & plot_all$section == "post", 31, plot_all$time) 
-    
-
-  #make sure time is numeric
-  plot_all$time <- as.numeric(plot_all$time)
   
+  plot_all <- data
   ### clean harvest data ####
   ## remove na's, and duplicates from pre/post
   
@@ -40,6 +24,7 @@ clean_data <- function(data) {
   
   
   plot_all$Merch_Carbon_Removed <- clean_harvest_data("Merch_Carbon_Removed")
+  plot_all$Carbon_Released_From_Fire <- clean_harvest_data("Carbon_Released_From_Fire")
   plot_all$chip_yield_gt <- clean_harvest_data("chip_yield_gt")
   plot_all$merch_yield_gt <-  clean_harvest_data("merch_yield_gt")
   plot_all$haul_chip_cpa <- clean_harvest_data("haul_chip_cpa")

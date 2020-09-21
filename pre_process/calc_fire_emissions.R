@@ -196,3 +196,35 @@ add_fire_emissions <- function(all_data) {
 }
 
 
+
+
+add_smoke <- function(all_data) {
+  perc_pm25 <- .0047
+  ### get elemental carbon from each emitted chemical ###
+  # % of CO2 that is C
+  pct_c <- .2729
+  pct_co2 <- .7144 * pct_c ### % of co2 in fire * # of C in co
+  
+  ## first convert other chems into CO2 equivalent (multiplying % content by CO2e)
+  methane_eq <- .0027 * 25
+  n20_eq <- .0039 * 298
+  co_eq <- .0552 * 1.57
+  h20_eq <- .2097 * .03
+  ## now take CO2e values and multiply by %C in co2
+  pct_methane <- methane_eq * pct_c
+  pct_n20 <- n20_eq * pct_c
+  pct_co <- co_eq * pct_c
+  pct_h20 <- h20_eq * pct_c
+  
+  ## get total smoke based on knowing the % of pm2.5 
+  total_smoke_mod <- all_data$Pot_Smoke_Mod / perc_pm25
+  total_smoke_sev <- all_data$Pot_Smoke_Sev / perc_pm25
+  
+  ## use total smoke to get % of carbon from other primary chemicals
+  all_data$smoke_c_mod <- total_smoke_mod * (pct_co + pct_co2 + pct_methane + pct_n20 + pct_h20)
+  all_data$smoke_c_sev <- total_smoke_sev * (pct_co + pct_co2 + pct_methane + pct_n20 + pct_h20)
+  
+  return(all_data)
+  
+}
+
