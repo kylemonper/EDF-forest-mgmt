@@ -36,10 +36,7 @@ options(scipen = 999)
 ##~ see pre_process/subset_data.R to see/ alter 
 ##~ which Access files are read in and which variables are kept from them
 all_data <- read_csv("output_data/all_data.csv")
-## sim where avg annual burned in 500k
-all_burned <- read_csv("output_data/all_burned_500k.csv")
-## sim where avg annual burned in 1MM
-all_burned <- read_csv("output_data/all_burned_1MM.csv")
+
 
 
 ### reformat/ clean in preperation for discounting

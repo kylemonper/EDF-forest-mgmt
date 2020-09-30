@@ -205,7 +205,13 @@ ggplot(filt, aes(cumsum_carb_annl/1000, cpu,linetype = inc_fire, color = inc_fir
     color = "calculation",
     linetype = "calculation"
   ) + 
-  theme_solarized() + scale_colour_solarized('red')
+  theme_solarized() + 
+theme(
+  legend.title    = element_blank(),
+    legend.box      = "horizontal",
+    legend.position = "bottom",
+  strip.background =element_rect(fill="wheat1")
+)
 
 
 ```
@@ -231,10 +237,10 @@ for(j in 1:length(scenarios)) {
   filter(scen_name == scenarios[j] &
            inc_fire == calcs[k] &
            cpu <= prices[l]) %>% 
-  mutate(c_stored = max(cumsum_fire),
-         cost = pracma::trapz(.$cumsum_fire, .$cpu),
+  mutate(c_stored = max(cumsum_carb),
+         cost = pracma::trapz(.$cumsum_carb, .$cpu),
          price = prices[l]) %>% 
-  select(names(df)) %>% 
+ # select(names(df)) %>% 
   sample_n(1)
 
 
@@ -342,7 +348,7 @@ tot_emis_1MM <- sum(base_1MM$base_fire_sev * base_1MM$acres)
 
 baseline_emis <- data.frame(scen_name = c("Above Avg.", "Historical Avg.", "Below Avg."), 
                             condition = "total emissions",
-                            emitted = c(tot_emis_10mm, tot_emis_5MM, tot_emis_1MM))
+                            emitted = c(tot_emis_10MM, tot_emis_5MM, tot_emis_1MM))
 
 scen_emis <- res %>% 
   filter(price == 100,
@@ -362,6 +368,8 @@ graph emissions
 
 all_emis$scen_name <- factor(all_emis$scen_name, levels = c("Below Avg.", "Historical Avg.", "Above Avg."))
 
+annl_emis <- all_emis %>% 
+  mutate(annl_emis = emitted * ((.05*(1.05)^32)/((1.05^32) - 1)))
 
 
 ggplot(all_emis, aes(condition, emitted/1000000, color = condition, fill = condition)) +
